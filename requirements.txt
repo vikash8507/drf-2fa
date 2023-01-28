@@ -1,0 +1,6 @@
+Django>=3.2
+djangorestframework>=3.13.0
+twilio==7.15.0
+redis==4.4.2
+pyotp==2.8.0
+phonenumberslite==8.13.4
