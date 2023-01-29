@@ -35,8 +35,8 @@ class User(AbstractUser):
 class TwoFactorAuth(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     mobile_otp = models.BooleanField("Enable Mobile OTP", default=False)
-    email_otp = models.BooleanField("Enable Mobile OTP", default=False)
-    mfa_otp = models.BooleanField("Enable Mobile OTP", default=False)
+    email_otp = models.BooleanField("Enable Email OTP", default=False)
+    mfa_otp = models.BooleanField("Enable MFA OTP", default=False)
     create_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
