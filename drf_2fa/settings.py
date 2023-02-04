@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'twofa_api',
 
     'rest_framework',
+    'drf_yasg',
 ]
 
 AUTH_USER_MODEL = 'twofa_api.User'

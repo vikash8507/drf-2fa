@@ -5,3 +5,4 @@ redis==4.4.2
 pyotp==2.8.0
 phonenumberslite==8.13.4
 PyJWT==2.6.0
+drf-yasg==1.21.4
