@@ -5,20 +5,22 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import get_user_model
 
-from twofa_api.utils import send_email
-
 User = get_user_model()
 
 class UserSerializer(serializers.Serializer):
     email = serializers.EmailField()
     username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
+    password1 = serializers.CharField(write_only=True)
+    password2 = serializers.CharField(write_only=True)
     phone = serializers.CharField()
     country_code = serializers.CharField()
 
     def validate(self, attrs):
-        password = attrs.get("password")
-        validate_password(password=password)
+        password1 = attrs.get("password1")
+        password2 = attrs.get("password2")
+        if password1 != password2:
+            raise ValidationError("Password mismatch")
+        validate_password(password=password1)
 
         phone = attrs.get("phone")
         country_code = attrs.get("country_code")
@@ -46,13 +48,32 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField()
 
     def validate(self, attrs):
-        validate_password(attrs["password"])
-        
         user = User.objects.filter(email=attrs["email"]).first()
         if user is None:
             raise ValidationError("Please enter correct email")
         if not user.check_password(attrs["password"]):
             raise ValidationError("Please enter correct credentials")
+        return super().validate(attrs)
 
-        send_email(attrs["email"], "OTP", "Otp is 939293")
+class AccessTokenSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField()
+    otp = serializers.CharField()
+
+    def validate(self, attrs):
+        user = User.objects.filter(email=attrs["email"]).first()
+        if user is None:
+            raise ValidationError("Please enter correct email")
+        if not user.check_password(attrs["password"]):
+            raise ValidationError("Please enter correct credentials")
+        if not attrs.get("otp"):
+            raise ValidationError("Please enter OTP")
+        return super().validate(attrs)
+
+class RefreshTokenSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
+    def validate(self, attrs):
+        if not attrs.get("refresh_token"):
+            raise ValidationError("Wrong refresh token")
         return super().validate(attrs)

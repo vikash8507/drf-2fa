@@ -1,9 +1,11 @@
-from django.urls import path
+from django.urls import path, include
 
-from twofa_api.views import RegisterAPIView, LoginAPIView, EnableDesableOTP
+from twofa_api.views import LoginAPIView
+from twofa_api.router import AuthRouter
+
+router = AuthRouter()
+router.register(r'auth', LoginAPIView, basename="auth-api")
 
 urlpatterns = [
-    path("register/", RegisterAPIView.as_view(), name="register"),
-    path("login/", LoginAPIView.as_view(), name="login"),
-    path("enable-desable/", EnableDesableOTP.as_view(), name="enable-desable")
+    path('', include(router.urls)),
 ]
