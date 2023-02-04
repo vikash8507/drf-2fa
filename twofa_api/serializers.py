@@ -1,9 +1,12 @@
-import phonenumbers
 from phonenumbers.phonenumberutil import NumberParseException
-from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
+import phonenumbers
+
 from django.contrib.auth.password_validation import validate_password
+from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
+
+from rest_framework.exceptions import ValidationError
+from rest_framework import serializers
 
 User = get_user_model()
 
@@ -77,3 +80,40 @@ class RefreshTokenSerializer(serializers.Serializer):
         if not attrs.get("refresh_token"):
             raise ValidationError("Wrong refresh token")
         return super().validate(attrs)
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField()
+    new_password1 = serializers.CharField()
+    new_password2 = serializers.CharField()
+
+    def validate_old_password(self, value):
+        user = getattr(self.context.get("request"), "user", None)
+        if user is None:
+            raise serializers.ValidationError(_("Please authenticate yourself first!"))
+        if not user.check_password(value):
+            raise serializers.ValidationError(_("Wrong old password!"))
+        return value
+    
+    def validate(self, attrs):
+        old_pass = attrs.get("old_password")
+        new_pass1 = attrs.get("new_password1")
+        new_pass2 = attrs.get("new_password2")
+        if old_pass == new_pass1:
+            raise serializers.ValidationError(_("Old nad New password can't same!"))
+        if new_pass2 != new_pass1:
+            raise serializers.ValidationError(_("Password 1 and 2 must be same!"))
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        new_pass = validated_data.get("new_password1")
+        user = getattr(self.context.get("request"), "user", None)
+        user.set_password(raw_password=new_pass)
+        user.save()
+        return user
+
+class ResetPasswordSerializer(serializers.Serializer):
+    pass
+
+
+class ResetPasswordConfirmSerializer(serializers.Serializer):
+    pass

@@ -1,14 +1,20 @@
+from rest_framework.decorators import (
+    action, authentication_classes, 
+    permission_classes
+)
 from rest_framework import status, viewsets
-from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import authentication, permissions
-from rest_framework.decorators import action, authentication_classes, permission_classes
 
-from twofa_api.serializers import UserSerializer, LoginSerializer, AccessTokenSerializer, RefreshTokenSerializer
+from twofa_api.serializers import (
+    RefreshTokenSerializer, ChangePasswordSerializer,
+    UserSerializer, LoginSerializer, AccessTokenSerializer, 
+    ResetPasswordSerializer, ResetPasswordConfirmSerializer
+)
 from twofa_api.models import TwoFactorAuth
 from twofa_api.utils import send_email
 
-class LoginAPIView(viewsets.GenericViewSet):
+class AuthAPIView(viewsets.GenericViewSet):
     
     def get_serializer_class(self):
         if self.action == "register":
@@ -19,9 +25,9 @@ class LoginAPIView(viewsets.GenericViewSet):
             return RefreshTokenSerializer
         return LoginSerializer
     
-    @action(detail=False, methods=["POST"], url_name="initial_login")
+    @action(detail=False, methods=["POST"], url_name="register")
     def register(self, request, *args, **kwargs):
-        serializer = UserSerializer(data=request.data)
+        serializer = self.get_serializer_class()
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -29,7 +35,7 @@ class LoginAPIView(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["POST"], url_name="initial_login")
     def initial_login(self, request, *args, **kwargs):
-        serializer = LoginSerializer(data=request.data)
+        serializer = self.get_serializer_class()
         serializer.is_valid(raise_exception=True)
         send_email(serializer.data['email'], "OTP", "OTP is 873186")
         return Response({"msg": "Otp Send to your device"})
@@ -38,14 +44,14 @@ class LoginAPIView(viewsets.GenericViewSet):
     def access_token(self, request, *args, **kwargs):
         serializer = self.get_serializer()
         serializer.is_valid(raise_exception=True)
-        send_email(serializer.email, "OTP", "OTP is 873186")
+        # send_email(serializer.email, "OTP", "OTP is 873186")
         return Response({"msg": "wait"})
 
     @action(detail=False, methods=["POST"], url_name="refresh_token")
     def refresh_token(self, request, *args, **kwargs):
         serializer = self.get_serializer()
         serializer.is_valid(raise_exception=True)
-        send_email(serializer.email, "OTP", "OTP is 873186")
+        # send_email(serializer.email, "OTP", "OTP is 873186")
         return Response({"msg": "wait"})
 
     @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
@@ -94,3 +100,28 @@ class LoginAPIView(viewsets.GenericViewSet):
         if why not in ("enable", "disable"):
             return {"error": "Please select enable or disable"}, status.HTTP_400_BAD_REQUEST
         return False, None, None
+
+class PasswordAPIView(viewsets.GenericViewSet):
+    
+    def get_serializer_class(self):
+        if self.action == "change_password":
+            return ChangePasswordSerializer
+        elif self.action == "reset_confirm_password":
+            return ResetPasswordConfirmSerializer
+        elif self.action == "reset_password":
+            return ResetPasswordSerializer
+    
+    @action(detail=False, methods=["POST"], url_name="change_password")
+    def change_password(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Password Changed!"}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["POST"], url_name="reset_password")
+    def reset_password(self, request, *args, **kwargs):
+        pass
+
+    @action(detail=False, methods=["POST"], url_name="reset_confirm_password")
+    def reset_confirm_password(self, request, *args, **kwargs):
+        pass
