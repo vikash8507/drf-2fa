@@ -92,7 +92,7 @@ class AuthAPIView(viewsets.GenericViewSet):
         return Response({"msg": f"Device succussfully {why}d!"})
 
     @staticmethod
-    def verify_device_data(self, device, why):
+    def verify_device_data(cls, device, why):
         if not device and not why:
             return {"error": "Please send device and why"}, status.HTTP_400_BAD_REQUEST
         if device not in ("email", "phone", "mfa"):
@@ -120,8 +120,14 @@ class PasswordAPIView(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["POST"], url_name="reset_password")
     def reset_password(self, request, *args, **kwargs):
-        pass
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Password reset email send to your email."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["POST"], url_name="reset_confirm_password")
     def reset_confirm_password(self, request, *args, **kwargs):
-        pass
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Password set with new password."}, status=status.HTTP_200_OK)

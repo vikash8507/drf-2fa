@@ -2,11 +2,19 @@ from phonenumbers.phonenumberutil import NumberParseException
 import phonenumbers
 
 from django.contrib.auth.password_validation import validate_password
+from django.utils.http import urlsafe_base64_encode as uid_encoder
+from django.utils.http import urlsafe_base64_decode as uid_decoder
+from django.contrib.auth.tokens import default_token_generator
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
+from django.utils.encoding import force_bytes
+from django.utils.encoding import force_str
+from django.core.mail import EmailMessage
 
 from rest_framework.exceptions import ValidationError
 from rest_framework import serializers
+
+from twofa_api.utils import validate_password
 
 User = get_user_model()
 
@@ -18,12 +26,15 @@ class UserSerializer(serializers.Serializer):
     phone = serializers.CharField()
     country_code = serializers.CharField()
 
-    def validate(self, attrs):
-        password1 = attrs.get("password1")
-        password2 = attrs.get("password2")
+    @classmethod
+    def password_validates(cls, password1, password2):
         if password1 != password2:
-            raise ValidationError("Password mismatch")
-        validate_password(password=password1)
+            raise ValidationError("Password must be same!")
+        if not validate_password(password1):
+            raise ValidationError("Password must contains special chars, capital, small and digits and length 8 chars must be")
+
+    def validate(self, attrs):
+        self.password_validates(attrs.get("password1"), attrs.get("password2"))
 
         phone = attrs.get("phone")
         country_code = attrs.get("country_code")
@@ -112,8 +123,72 @@ class ChangePasswordSerializer(serializers.Serializer):
         return user
 
 class ResetPasswordSerializer(serializers.Serializer):
-    pass
+    email = serializers.EmailField()
 
+    @classmethod
+    def _check_user(cls, email):
+        user = User.objects.filter(email=email).first()
+        return user
+    
+    @classmethod
+    def send_email(self, data):
+        email = EmailMessage(
+            "Password Reset Link",
+            f"UID: {data.get('uid')}, Token: {data.get('token')}",
+            'hello@udyself.com',
+            [data.get("email")]
+        )
+        email.send()
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        user = self._check_user(email)
+        if not user:
+            raise serializers.ValidationError("Email does not exist!")
+        token = default_token_generator.make_token(user)
+        uuid = uid_encoder(force_bytes(user.pk))
+        attrs.update({
+            "token": token,
+            "uid": uuid
+        })
+        return attrs
+
+    def save(self, *args, **kwargs):
+        data = dict(self.validated_data.items())
+        self.send_email(data)
 
 class ResetPasswordConfirmSerializer(serializers.Serializer):
-    pass
+    new_password1 = serializers.CharField(max_length=128)
+    new_password2 = serializers.CharField(max_length=128)
+    uid = serializers.CharField()
+    token = serializers.CharField()
+
+    @classmethod
+    def password_validates(cls, password1, password2):
+        if password1 != password2:
+            raise ValidationError("Password must be same!")
+        if not validate_password(password1):
+            raise ValidationError("Password must contain special chars, capital, small and digits")
+
+    def validate(self, attrs):
+        self.password_validates(attrs.get("new_password1"), attrs.get("new_password2"))
+        try:
+            uid = force_str(uid_decoder(attrs['uid']))
+            _user = User._default_manager.get(pk=uid)
+        except (TypeError, ValueError, User.DoesNotExist):
+            raise ValidationError({'uid': _('Invalid data!')})
+
+        if not default_token_generator.check_token(_user, attrs.get("token")):
+            raise ValidationError({'token': _('Token expire or invalid!')})
+
+        attrs.update({
+            "user": _user
+        })
+        return attrs
+
+    def create(self, validated_data):
+        new_pass = validated_data.get("new_password1")
+        user = validated_data.get("user")
+        user.set_password(raw_password=new_pass)
+        user.save()
+        return user
