@@ -4,12 +4,14 @@ from rest_framework.decorators import (
 )
 from rest_framework import status, viewsets
 from rest_framework.response import Response
+from django.utils.translation import gettext_lazy as _
 from rest_framework import authentication, permissions
 
 from twofa_api.serializers import (
     RefreshTokenSerializer, ChangePasswordSerializer,
     UserSerializer, LoginSerializer, AccessTokenSerializer, 
-    ResetPasswordSerializer, ResetPasswordConfirmSerializer
+    ResetPasswordSerializer, ResetPasswordConfirmSerializer,
+    VerifyEmailSerializer, ResendVerifyLinkSerializer
 )
 from twofa_api.models import TwoFactorAuth
 from twofa_api.utils import send_email
@@ -17,41 +19,29 @@ from twofa_api.utils import send_email
 class AuthAPIView(viewsets.GenericViewSet):
     
     def get_serializer_class(self):
-        if self.action == "register":
-            return UserSerializer
-        elif self.action == "access_token":
+        if self.action == "access_token":
             return AccessTokenSerializer
         elif self.action == "refresh_token":
             return RefreshTokenSerializer
         return LoginSerializer
-    
-    @action(detail=False, methods=["POST"], url_name="register")
-    def register(self, request, *args, **kwargs):
-        serializer = self.get_serializer_class()
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
     @action(detail=False, methods=["POST"], url_name="initial_login")
     def initial_login(self, request, *args, **kwargs):
         serializer = self.get_serializer_class()
         serializer.is_valid(raise_exception=True)
         send_email(serializer.data['email'], "OTP", "OTP is 873186")
-        return Response({"msg": "Otp Send to your device"})
+        return Response({"msg": _("Otp Send to your device")})
 
     @action(detail=False, methods=["POST"], url_name="access_token")
     def access_token(self, request, *args, **kwargs):
         serializer = self.get_serializer()
         serializer.is_valid(raise_exception=True)
-        # send_email(serializer.email, "OTP", "OTP is 873186")
         return Response({"msg": "wait"})
 
     @action(detail=False, methods=["POST"], url_name="refresh_token")
     def refresh_token(self, request, *args, **kwargs):
         serializer = self.get_serializer()
         serializer.is_valid(raise_exception=True)
-        # send_email(serializer.email, "OTP", "OTP is 873186")
         return Response({"msg": "wait"})
 
     @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
@@ -68,7 +58,7 @@ class AuthAPIView(viewsets.GenericViewSet):
         obj, created = TwoFactorAuth.objects.get_or_create(user=request.user)
         if created and why == "disable":
             obj.delete()
-            return Response({"error": "Device is not enabled yet!"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": ("Device is not enabled yet!")}, status=status.HTTP_400_BAD_REQUEST)
 
         if created:
             if device == "email":
@@ -101,6 +91,37 @@ class AuthAPIView(viewsets.GenericViewSet):
             return {"error": "Please select enable or disable"}, status.HTTP_400_BAD_REQUEST
         return False, None, None
 
+
+class RegisterVerifyEmailAPIView(viewsets.GenericViewSet):
+    def get_serializer_class(self):
+        if self.action == "verify_email":
+            return VerifyEmailSerializer
+        elif self.action == "resend_verify_link":
+            return ResendVerifyLinkSerializer
+        return UserSerializer
+
+    @action(detail=False, methods=["POST"], url_name="register")
+    def register(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["POST"], url_name="verify_email")
+    def verify_email(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": _("Email verified successfuly!")}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["POST"], url_name="resend_verify_link")
+    def resend_verify_link(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": _("Email verification link send!")}, status=status.HTTP_200_OK)
+
+
 class PasswordAPIView(viewsets.GenericViewSet):
     
     def get_serializer_class(self):
@@ -116,18 +137,18 @@ class PasswordAPIView(viewsets.GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"message": "Password Changed!"}, status=status.HTTP_201_CREATED)
+        return Response({"message": _("Password Changed!")}, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["POST"], url_name="reset_password")
     def reset_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"message": "Password reset email send to your email."}, status=status.HTTP_200_OK)
+        return Response({"message": _("Password reset email send to your email.")}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["POST"], url_name="reset_confirm_password")
     def reset_confirm_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"message": "Password set with new password."}, status=status.HTTP_200_OK)
+        return Response({"message": _("Password set with new password.")}, status=status.HTTP_200_OK)

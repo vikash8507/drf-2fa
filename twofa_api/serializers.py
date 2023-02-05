@@ -14,7 +14,10 @@ from django.core.mail import EmailMessage
 from rest_framework.exceptions import ValidationError
 from rest_framework import serializers
 
-from twofa_api.utils import validate_password
+from twofa_api.utils import (
+    validate_password, generate_email_verification, 
+    send_email, verify_email_token
+)
 
 User = get_user_model()
 
@@ -29,31 +32,126 @@ class UserSerializer(serializers.Serializer):
     @classmethod
     def password_validates(cls, password1, password2):
         if password1 != password2:
-            raise ValidationError("Password must be same!")
-        if not validate_password(password1):
-            raise ValidationError("Password must contains special chars, capital, small and digits and length 8 chars must be")
+            raise ValidationError(_("Password must be same!"))
+        # if not validate_password(password1):
+        #     raise ValidationError("Password must contains special chars, capital, small and digits and length 8 chars must be")
+    
+    @classmethod
+    def _check_user_email_username_phone(cls, username=None, email=None, phone=None):
+        # Validate unique username
+        user = User.objects.filter(username=username).first()
+        if user is not None:
+            raise serializers.ValidationError(_("Username already exist!"))
+        # Validate unique email
+        user = User.objects.filter(email=email).first()
+        if user is not None:
+            raise serializers.ValidationError(_("Email already exist!"))
+        # Validate unique phone
+        user = User.objects.filter(phone=phone).first()
+        if user is not None:
+            raise serializers.ValidationError(_("Phone already exist!"))
 
     def validate(self, attrs):
         self.password_validates(attrs.get("password1"), attrs.get("password2"))
+        self._check_user_email_username_phone(attrs.get("username"), attrs.get("email"), attrs.get("phone"))
 
         phone = attrs.get("phone")
         country_code = attrs.get("country_code")
         if (phone and not country_code) or (not phone and country_code):
-            raise ValidationError("Country Code and Phone Number both required")
+            raise ValidationError(_("Country Code and Phone Number both required"))
         if phone and country_code:
             try:
                 number = phonenumbers.parse(f"{country_code}{phone}", None)
             except NumberParseException as e:
-                raise ValidationError("Please enter correct country code and phone number")
+                raise ValidationError(_("Please enter correct country code and phone number"))
             if not phonenumbers.is_valid_number(number):
-                raise ValidationError("Please enter correct country code and phone number")
+                raise ValidationError(_("Please enter correct country code and phone number"))
         return super().validate(attrs)
 
     def create(self, validated_data):
-        password = validated_data.pop("password")
+        password1 = validated_data.pop("password1")
+        validated_data.pop("password2")
+
         user = User.objects.create(**validated_data)
-        user.set_password(raw_password=password)
+        user.set_password(raw_password=password1)
         user.is_active = False
+        user.email_verified = False
+        user.phone_verified = False
+        user.save()
+
+        token = generate_email_verification(user)
+        uid = uid_encoder(force_bytes(user.pk))
+        send_email(
+            message=f"Token: {token}, UID: {uid}",
+            subject="Email Verification mail",
+            to=user.email
+        )
+        return user
+
+class ResendVerifyLinkSerializer(serializers.Serializer):
+    email = serializers.CharField()
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        user = User.objects.filter(email=email).first()
+        if user is None:
+            raise serializers.ValidationError(_("Email does not exist!"))
+        print(user.email_verified)
+        if user.email_verified:
+            raise serializers.ValidationError(_("Email already verified! If you have any issue in login then contact with admin!"))
+        attrs.update({
+            "user": user
+        })
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        user = validated_data.get("user")
+        token = generate_email_verification(user)
+        uid = uid_encoder(force_bytes(user.pk))
+        send_email(
+            message=f"Token: {token}, UID: {uid}",
+            subject="Email Verification mail",
+            to=user.email
+        )
+        return user
+
+class VerifyEmailSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    uid = serializers.CharField()
+
+    def validate(self, attrs):
+        uid = attrs.get("uid")
+        token = attrs.get("token")
+        if not uid or not token:
+            raise serializers.ValidationError(_("UID or Token missing"))
+        
+        try:
+            uid = force_str(uid_decoder(attrs['uid']))
+            user = User._default_manager.get(pk=uid)
+        except (TypeError, ValueError, User.DoesNotExist):
+            raise ValidationError({'uid': _('Invalid uid!')})
+
+        user.is_active = True
+        user.email_verified = True
+        user.save()
+        attrs.update({
+            "user": user
+        })
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        user = validated_data.get("user")
+        token = validated_data.get("token")
+
+        success, _user = verify_email_token(token)
+        if not success:
+            raise serializers.ValidationError(_("Token is wrong or expire. Please resend and reverify it!"))
+        if user.username != _user.username:
+            raise serializers.ValidationError(_("Wrong Token!"))
+
+        user.is_active = True
+        user.email_verified = True
+        user.phone_verified = False
         user.save()
         return user
 
@@ -64,9 +162,9 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, attrs):
         user = User.objects.filter(email=attrs["email"]).first()
         if user is None:
-            raise ValidationError("Please enter correct email")
+            raise ValidationError(_("Please enter correct email"))
         if not user.check_password(attrs["password"]):
-            raise ValidationError("Please enter correct credentials")
+            raise ValidationError(_("Please enter correct credentials"))
         return super().validate(attrs)
 
 class AccessTokenSerializer(serializers.Serializer):
@@ -77,11 +175,11 @@ class AccessTokenSerializer(serializers.Serializer):
     def validate(self, attrs):
         user = User.objects.filter(email=attrs["email"]).first()
         if user is None:
-            raise ValidationError("Please enter correct email")
+            raise ValidationError(_("Please enter correct email"))
         if not user.check_password(attrs["password"]):
-            raise ValidationError("Please enter correct credentials")
+            raise ValidationError(_("Please enter correct credentials"))
         if not attrs.get("otp"):
-            raise ValidationError("Please enter OTP")
+            raise ValidationError(_("Please enter OTP"))
         return super().validate(attrs)
 
 class RefreshTokenSerializer(serializers.Serializer):
@@ -89,7 +187,7 @@ class RefreshTokenSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if not attrs.get("refresh_token"):
-            raise ValidationError("Wrong refresh token")
+            raise ValidationError(_("Wrong refresh token"))
         return super().validate(attrs)
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -144,12 +242,12 @@ class ResetPasswordSerializer(serializers.Serializer):
         email = attrs.get("email")
         user = self._check_user(email)
         if not user:
-            raise serializers.ValidationError("Email does not exist!")
+            raise serializers.ValidationError(_("Email does not exist!"))
         token = default_token_generator.make_token(user)
-        uuid = uid_encoder(force_bytes(user.pk))
+        uid = uid_encoder(force_bytes(user.pk))
         attrs.update({
             "token": token,
-            "uid": uuid
+            "uid": uid
         })
         return attrs
 
@@ -166,9 +264,9 @@ class ResetPasswordConfirmSerializer(serializers.Serializer):
     @classmethod
     def password_validates(cls, password1, password2):
         if password1 != password2:
-            raise ValidationError("Password must be same!")
+            raise ValidationError(_("Password must be same!"))
         if not validate_password(password1):
-            raise ValidationError("Password must contain special chars, capital, small and digits")
+            raise ValidationError(_("Password must contain special chars, capital, small and digits"))
 
     def validate(self, attrs):
         self.password_validates(attrs.get("new_password1"), attrs.get("new_password2"))
