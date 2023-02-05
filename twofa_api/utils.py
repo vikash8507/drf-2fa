@@ -2,6 +2,7 @@ import re
 import jwt
 import pyotp
 import datetime
+from twilio.rest import Client
 from django.conf import settings
 from django.core.mail import EmailMessage
 from django.contrib.auth import get_user_model
@@ -71,3 +72,14 @@ def generate_otp():
     totp = pyotp.TOTP(s="", digits=6, digest="SHA1", interval=75)
     return totp
 
+def send_mobile_otp(mobile):
+    twilio_mobile = getattr(settings, "TWILIO_MOBILE", None)
+    account_sid = getattr(settings, "TWILIO_ACCOUNT", None)
+    auth_token = getattr(settings, "TWILIO_TOKEN", None)
+
+    client = Client(account_sid, auth_token)
+    totp = generate_otp()
+    message = f"OTP: {totp.now()}"
+
+    response = client.messages.create(to=mobile, from_=twilio_mobile, body=message)
+    return response

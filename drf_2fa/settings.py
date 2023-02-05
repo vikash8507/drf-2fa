@@ -147,3 +147,6 @@ CACHES = {
 }
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+TWILIO_ACCOUNT=""
+TWILIO_TOKEN=""
