@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from rest_framework.decorators import (
     action, authentication_classes, 
     permission_classes
@@ -9,12 +10,12 @@ from rest_framework import authentication, permissions
 
 from twofa_api.serializers import (
     RefreshTokenSerializer, ChangePasswordSerializer,
-    UserSerializer, LoginSerializer, AccessTokenSerializer, 
+    VerifyEmailSerializer, ResendVerifyLinkSerializer,
     ResetPasswordSerializer, ResetPasswordConfirmSerializer,
-    VerifyEmailSerializer, ResendVerifyLinkSerializer
+    UserSerializer, InitialLoginSerializer, AccessTokenSerializer, 
 )
 from twofa_api.models import TwoFactorAuth
-from twofa_api.utils import send_email
+from twofa_api.utils import generate_otp
 
 class AuthAPIView(viewsets.GenericViewSet):
     
@@ -23,20 +24,50 @@ class AuthAPIView(viewsets.GenericViewSet):
             return AccessTokenSerializer
         elif self.action == "refresh_token":
             return RefreshTokenSerializer
-        return LoginSerializer
+        return InitialLoginSerializer
+
+    @classmethod
+    def _set_cahce_initial_details(cls, email, otp):
+        cache.set(email, {"otp": otp}, timeout=70)
+
+    @classmethod
+    def _get_cahce_initial_details(cls, email):
+        return cache.get(email)
+
+    @classmethod
+    def _delete_cahce_initial_details(cls, email):
+        cache.delete(email)
 
     @action(detail=False, methods=["POST"], url_name="initial_login")
     def initial_login(self, request, *args, **kwargs):
-        serializer = self.get_serializer_class()
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        send_email(serializer.data['email'], "OTP", "OTP is 873186")
+
+        totp = generate_otp()
+        otp = totp.now()
+        self._set_cahce_initial_details(serializer.data.get("email"), otp)
+        # send_email(
+        #     to=serializer.data['email'], 
+        #     subject="OTP", 
+        #     message=f"OTP is {totp.now()}"
+        # )
+        print("OTP:", otp)
         return Response({"msg": _("Otp Send to your device")})
 
     @action(detail=False, methods=["POST"], url_name="access_token")
     def access_token(self, request, *args, **kwargs):
-        serializer = self.get_serializer()
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return Response({"msg": "wait"})
+        
+        totp = generate_otp()
+        otp = serializer.data.get("otp")
+        email = serializer.data.get("email")
+        cached = self._get_cahce_initial_details(email)
+        if not cached or otp != cached.get("otp") or not totp.verify(otp):
+            return Response({"error": "Wrong otp!"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        self._delete_cahce_initial_details(email)
+        return Response({"msg": "Access Token"})
 
     @action(detail=False, methods=["POST"], url_name="refresh_token")
     def refresh_token(self, request, *args, **kwargs):

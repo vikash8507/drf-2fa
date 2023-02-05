@@ -155,7 +155,7 @@ class VerifyEmailSerializer(serializers.Serializer):
         user.save()
         return user
 
-class LoginSerializer(serializers.Serializer):
+class InitialLoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
 

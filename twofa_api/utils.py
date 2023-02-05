@@ -1,5 +1,6 @@
 import re
 import jwt
+import pyotp
 import datetime
 from django.conf import settings
 from django.core.mail import EmailMessage
@@ -65,3 +66,8 @@ def verify_email_token(token, *args, **kwargs):
     except (ValueError, jwt.DecodeError, jwt.ExpiredSignatureError):
         return False, None
     return True, user
+
+def generate_otp():
+    totp = pyotp.TOTP(s="", digits=6, digest="SHA1", interval=75)
+    return totp
+
