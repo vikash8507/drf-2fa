@@ -13,6 +13,7 @@ from twofa_api.serializers import (
     VerifyEmailSerializer, ResendVerifyLinkSerializer,
     ResetPasswordSerializer, ResetPasswordConfirmSerializer,
     UserSerializer, InitialLoginSerializer, AccessTokenSerializer, 
+    VerifyMobileSerializer, EnableDesableSerializer
 )
 from twofa_api.models import TwoFactorAuth
 from twofa_api.utils import generate_otp
@@ -24,7 +25,12 @@ class AuthAPIView(viewsets.GenericViewSet):
             return AccessTokenSerializer
         elif self.action == "refresh_token":
             return RefreshTokenSerializer
-        return InitialLoginSerializer
+        elif self.action == "verify_mobile":
+            return VerifyMobileSerializer
+        elif self.action == "initial_login":
+            return InitialLoginSerializer
+        elif self.action == "enable_desable_otp":
+            return EnableDesableSerializer
 
     @classmethod
     def _set_cahce_initial_details(cls, email, otp):
@@ -77,14 +83,12 @@ class AuthAPIView(viewsets.GenericViewSet):
 
     @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
     @permission_classes([permissions.IsAuthenticated])
-    @action(detail=False, methods=["POST"], url_name="refresh_token")
+    @action(detail=False, methods=["POST"], url_name="enable_desable_otp")
     def enable_desable_otp(self, request, *args, **kwargs):
-        device = request.data.get("device")
-        why = request.data.get("why")
-
-        verify_device, message, status_code = self.verify_device_data(device=device, why=why)
-        if verify_device and message and status_code:
-            return Response(message, status=status_code)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device = serializer.data.get("device")
+        why = serializer.data.get("why")
         
         obj, created = TwoFactorAuth.objects.get_or_create(user=request.user)
         if created and why == "disable":
@@ -112,15 +116,32 @@ class AuthAPIView(viewsets.GenericViewSet):
             obj.save()
         return Response({"msg": f"Device succussfully {why}d!"})
 
-    @staticmethod
-    def verify_device_data(cls, device, why):
-        if not device and not why:
-            return {"error": "Please send device and why"}, status.HTTP_400_BAD_REQUEST
-        if device not in ("email", "phone", "mfa"):
-            return {"error": "Please select email or phone or mfa device"}, status.HTTP_400_BAD_REQUEST
-        if why not in ("enable", "disable"):
-            return {"error": "Please select enable or disable"}, status.HTTP_400_BAD_REQUEST
-        return False, None, None
+    @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
+    @permission_classes([permissions.IsAuthenticated])
+    @action(detail=False, methods=["POST"], url_name="send_mobile_verification_otp")
+    def send_mobile_verification_otp(self, request, *args, **kwargs):
+        totp = generate_otp()
+        otp = totp.now()
+        print("OTP:", otp)
+        cache.set(request.user.phone, otp, timeout=75)
+        return Response({"message": "Otp send to your mobile."}, status=status.HTTP_200_OK)
+
+
+    @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
+    @permission_classes([permissions.IsAuthenticated])
+    @action(detail=False, methods=["POST"], url_name="verify_mobile")
+    def verify_mobile(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        otp = cache.get(user.phone)
+        if not otp:
+            return Response({"error": "OTP expired! Please resend otp"}, status=status.HTTP_400_BAD_REQUEST)
+        if otp != serializer.data.get("otp"):
+            return Response({"error": "Wrong OTP!"}, status=status.HTTP_400_BAD_REQUEST)
+        user.phone_verified = True
+        user.save()
+        return Response({"message": "Mobile verification successful!"}, status=status.HTTP_200_OK)
 
 
 class RegisterVerifyEmailAPIView(viewsets.GenericViewSet):
@@ -183,3 +204,4 @@ class PasswordAPIView(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": _("Password set with new password.")}, status=status.HTTP_200_OK)
+

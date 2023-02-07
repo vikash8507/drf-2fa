@@ -167,6 +167,24 @@ class InitialLoginSerializer(serializers.Serializer):
             raise ValidationError(_("Please enter correct credentials"))
         return super().validate(attrs)
 
+
+class VerifyMobileSerializer(serializers.Serializer):
+    otp = serializers.CharField()
+
+
+class EnableDesableSerializer(serializers.Serializer):
+    device = serializers.CharField()
+    why = serializers.CharField()
+
+    def validate(self, attrs):
+        device = attrs.get("device")
+        why = attrs.get("why")
+        if device not in ("email", "phone", "mfa"):
+            raise serializers.ValidationError("Please select email or phone or mfa device")
+        if why not in ("enable", "disable"):
+            raise serializers.ValidationError("Please select enable or disable")
+        return super().validate(attrs)
+
 class AccessTokenSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
