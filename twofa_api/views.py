@@ -134,8 +134,9 @@ class AuthAPIView(viewsets.GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = request.user
+        totp = generate_otp()
         otp = cache.get(user.phone)
-        if not otp:
+        if not otp or not totp.verify(otp):
             return Response({"error": "OTP expired! Please resend otp"}, status=status.HTTP_400_BAD_REQUEST)
         if otp != serializer.data.get("otp"):
             return Response({"error": "Wrong OTP!"}, status=status.HTTP_400_BAD_REQUEST)
