@@ -1,25 +1,24 @@
 from django.core.cache import cache
-from rest_framework.decorators import (
-    action, authentication_classes, 
-    permission_classes
-)
+from rest_framework.decorators import action, permission_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from django.utils.translation import gettext_lazy as _
-from rest_framework import authentication, permissions
+from rest_framework import permissions
 
 from twofa_api.serializers import (
     RefreshTokenSerializer, ChangePasswordSerializer,
     VerifyEmailSerializer, ResendVerifyLinkSerializer,
     ResetPasswordSerializer, ResetPasswordConfirmSerializer,
-    UserSerializer, InitialLoginSerializer, AccessTokenSerializer, 
+    UserSerializer, InitialLoginSerializer, AccessTokenSerializer,
     VerifyMobileSerializer, EnableDesableSerializer
 )
 from twofa_api.models import TwoFactorAuth
-from twofa_api.utils import generate_otp
+from twofa_api.utils import generate_otp, generate_access_token, generate_refresh_token
+
 
 class AuthAPIView(viewsets.GenericViewSet):
-    
+
     def get_serializer_class(self):
         if self.action == "access_token":
             return AccessTokenSerializer
@@ -49,29 +48,32 @@ class AuthAPIView(viewsets.GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        user = getattr(serializer, "_user", None)
+        if not user:
+            return Response({"error": "Something wrong! Please try after sometime!"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         totp = generate_otp()
         otp = totp.now()
         self._set_cahce_initial_details(serializer.data.get("email"), otp)
         # send_email(
-        #     to=serializer.data['email'], 
-        #     subject="OTP", 
+        #     to=serializer.data['email'],
+        #     subject="OTP",
         #     message=f"OTP is {totp.now()}"
         # )
-        print("OTP:", otp)
-        return Response({"msg": _("Otp Send to your device")})
+        return Response({"message": _("Otp Send to your device")})
 
     @action(detail=False, methods=["POST"], url_name="access_token")
     def access_token(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         totp = generate_otp()
         otp = serializer.data.get("otp")
         email = serializer.data.get("email")
         cached = self._get_cahce_initial_details(email)
         if not cached or otp != cached.get("otp") or not totp.verify(otp):
             return Response({"error": "Wrong otp!"}, status=status.HTTP_401_UNAUTHORIZED)
-        
+
         self._delete_cahce_initial_details(email)
         return Response({"msg": "Access Token"})
 
@@ -81,7 +83,6 @@ class AuthAPIView(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         return Response({"msg": "wait"})
 
-    @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
     @permission_classes([permissions.IsAuthenticated])
     @action(detail=False, methods=["POST"], url_name="enable_desable_otp")
     def enable_desable_otp(self, request, *args, **kwargs):
@@ -89,7 +90,7 @@ class AuthAPIView(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         device = serializer.data.get("device")
         why = serializer.data.get("why")
-        
+
         obj, created = TwoFactorAuth.objects.get_or_create(user=request.user)
         if created and why == "disable":
             obj.delete()
@@ -116,7 +117,6 @@ class AuthAPIView(viewsets.GenericViewSet):
             obj.save()
         return Response({"msg": f"Device succussfully {why}d!"})
 
-    @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
     @permission_classes([permissions.IsAuthenticated])
     @action(detail=False, methods=["POST"], url_name="send_mobile_verification_otp")
     def send_mobile_verification_otp(self, request, *args, **kwargs):
@@ -126,8 +126,6 @@ class AuthAPIView(viewsets.GenericViewSet):
         cache.set(request.user.phone, otp, timeout=75)
         return Response({"message": "Otp send to your mobile."}, status=status.HTTP_200_OK)
 
-
-    @authentication_classes([authentication.TokenAuthentication, authentication.SessionAuthentication])
     @permission_classes([permissions.IsAuthenticated])
     @action(detail=False, methods=["POST"], url_name="verify_mobile")
     def verify_mobile(self, request, *args, **kwargs):
@@ -176,7 +174,7 @@ class RegisterVerifyEmailAPIView(viewsets.GenericViewSet):
 
 
 class PasswordAPIView(viewsets.GenericViewSet):
-    
+
     def get_serializer_class(self):
         if self.action == "change_password":
             return ChangePasswordSerializer
@@ -184,7 +182,7 @@ class PasswordAPIView(viewsets.GenericViewSet):
             return ResetPasswordConfirmSerializer
         elif self.action == "reset_password":
             return ResetPasswordSerializer
-    
+
     @action(detail=False, methods=["POST"], url_name="change_password")
     def change_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -206,3 +204,8 @@ class PasswordAPIView(viewsets.GenericViewSet):
         serializer.save()
         return Response({"message": _("Password set with new password.")}, status=status.HTTP_200_OK)
 
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def secret(request):
+    return Response({"message": "You are authenticated!"})

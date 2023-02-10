@@ -134,9 +134,9 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
-    # 'DEFAULT_AUTHENTICATION_CLASSES': [
-    #     'accounts.authentication.SafeJWTAuthentication',
-    # ]
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'twofa_api.authentication.SafeJWTAuthentication',
+    ]
 }
 
 CACHES = {
@@ -148,5 +148,21 @@ CACHES = {
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-TWILIO_ACCOUNT=""
-TWILIO_TOKEN=""
+TWILIO_ACCOUNT = ""
+TWILIO_TOKEN = ""
+
+JWT_SECRET = "e6212459c3b9d354e257215fd665429c18579c85e8dabb619f32ec4dc94f9edd"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_TIME = 1
+
+TOTP_SECRET = "ae0d766a7ea543c35fe83c0f7d9a2526f208145aa8ea2911543a45b447e606e9"
+
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
